@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Pitfall Kids</title>
+  <style>
+    canvas { 
+      background: #88c070; 
+      display: block; 
+      margin: auto; 
+      border: 2px solid #000;
+      touch-action: none; /* evita scroll ao tocar no canvas em celular */
+    }
+    h1 {
+      text-align: center;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Herr Arruda</h1>
+
+<canvas id="game" width="800" height="300"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+// ---------- CONFIGURAÇÕES BÁSICAS ----------
+const groundY = 250;      // linha do chão
+const gravity = 0.6;
+const jumpForce = -13;    // pulo um pouco mais alto
+const obstacleSpeed = 5;
+
+// ---------- IMAGENS ----------
+const playerImg = new Image();
+playerImg.src = "menino.png";   // spritesheet com 4 quadros lado a lado
+
+const bushImg = new Image();
+bushImg.src = "arbusto.png";    // imagem do arbusto
+
+// Tamanho padrão (fallback)
+let playerFrameWidth = 32;
+let playerFrameHeight = 48;
+
+// fator de escala para deixar o menino menor
+const PLAYER_SCALE = 0.6;
+
+// quando a imagem carregar, ajusta
+playerImg.onload = () => {
+  playerFrameWidth = playerImg.width / 4; // 4 quadros
+  playerFrameHeight = playerImg.height;
+};
+
+// ---------- JOGADOR ----------
+let player = {
+  x: 80,
+  y: groundY,      // y = pés no chão
+  vy: 0,
+  jumping: false,
+  frame: 0
+};
+
+// ---------- OBSTÁCULOS ----------
+let obstacles = [];
+let frameCount = 0;
+
+// ---------- VIDAS E PONTOS ----------
+let lives = 3;
+let score = 0;
+let lastTime = null; // para calcular segundos com precisão
+
+// ---------- FUNÇÃO DE PULO ----------
+function jump() {
+  if (!player.jumping) {
+    player.vy = jumpForce;
+    player.jumping = true;
+  }
+}
+
+// ---------- CONTROLES ----------
+document.addEventListener("keydown", e => {
+  if (e.code === "Space") {
+    jump();
+  }
+});
+
+canvas.addEventListener("mousedown", e => {
+  jump();
+});
+
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  jump();
+}, { passive: false });
+
+// ---------- DESENHA CHÃO ----------
+function drawGround() {
+  ctx.strokeStyle = "#3b5d28";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(canvas.width, groundY);
+  ctx.stroke();
+}
+
+// ---------- DESENHA VIDAS (em alemão) ----------
+function drawLives() {
+  ctx.fillStyle = "black";
+  ctx.font = "20px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText("Leben: " + lives, 10, 25);
+}
+
+// ---------- DESENHA PONTOS ----------
+function drawScore() {
+  ctx.fillStyle = "black";
+  ctx.font = "20px Arial";
+  ctx.textAlign = "right";
+  ctx.fillText("Pontos: " + Math.floor(score), canvas.width - 10, 25);
+}
+
+// ---------- DESENHAR O MENINO ----------
+function drawPlayer() {
+  // tamanho desenhado (escalado)
+  const fw = playerFrameWidth * PLAYER_SCALE;
+  const fh = playerFrameHeight * PLAYER_SCALE;
+
+  const px = player.x;
+  const py = player.y - fh;  // topo da imagem (pé - altura)
+
+  if (playerImg.complete && playerImg.naturalWidth > 0) {
+    const srcFw = playerFrameWidth;
+    const srcFh = playerFrameHeight;
+
+    ctx.drawImage(
+      playerImg,
+      srcFw * player.frame,
+      0,
+      srcFw,
+      srcFh,
+      px,
+      py,
+      fw,
+      fh
+    );
+
+    // animação de corrida (quando não está no ar)
+    if (!player.jumping && frameCount % 8 === 0) {
+      player.frame = (player.frame + 1) % 4;
+    }
+  } else {
+    // provisório se a imagem ainda não carregou
+    ctx.fillStyle = "black";
+    ctx.fillRect(px, py, fw, fh);
+  }
+}
+
+// ---------- DESENHAR OBSTÁCULOS ----------
+function drawObstacles() {
+  for (let o of obstacles) {
+    o.x -= obstacleSpeed;
+
+    const bushWidth = 40;
+    const bushHeight = 40;
+    const bx = o.x;
+    const by = groundY - bushHeight;
+
+    if (bushImg.complete && bushImg.naturalWidth > 0) {
+      ctx.drawImage(bushImg, bx, by, bushWidth, bushHeight);
+    } else {
+      ctx.fillStyle = "green";
+      ctx.fillRect(bx, by, bushWidth, bushHeight);
+    }
+
+    // colisão simples retângulo vs retângulo
+    const fw = playerFrameWidth * PLAYER_SCALE;
+    const fh = playerFrameHeight * PLAYER_SCALE;
+    const px = player.x;
+    const py = player.y - fh;
+
+    if (
+      px < bx + bushWidth &&
+      px + fw > bx &&
+      py < by + bushHeight &&
+      py + fh > by
+    ) {
+      // COLIDIU
+      lives--;
+
+      if (lives > 0) {
+        // reseta obstáculos e posição do jogador, mas mantém a pontuação
+        obstacles = [];
+        player.x = 80;
+        player.y = groundY;
+        player.vy = 0;
+        player.jumping = false;
+        frameCount = 0;
+      } else {
+        alert("Game Over! Deine Chancen sind vorbei..");
+        // reinicia tudo
+        lives = 3;
+        score = 0;
+        lastTime = null;
+        obstacles = [];
+        player.x = 80;
+        player.y = groundY;
+        player.vy = 0;
+        player.jumping = false;
+        frameCount = 0;
+      }
+
+      // sai do loop para evitar múltiplas colisões no mesmo frame
+      break;
+    }
+  }
+
+  // remove obstáculos fora da tela
+  obstacles = obstacles.filter(o => o.x > -60);
+}
+
+// ---------- LOOP PRINCIPAL ----------
+function loop(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const deltaSeconds = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+
+  // a cada segundo correndo = +10 pontos
+  score += deltaSeconds * 10;
+
+  frameCount++;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawGround();
+  drawLives();
+  drawScore();
+
+  // física do jogador
+  player.vy += gravity;
+  player.y += player.vy;
+
+  if (player.y >= groundY) {
+    player.y = groundY;
+    player.vy = 0;
+    player.jumping = false;
+  }
+
+  drawPlayer();
+
+  // cria novos obstáculos
+  if (frameCount % 120 === 0) {
+    obstacles.push({ x: canvas.width + 20 });
+  }
+
+  drawObstacles();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
