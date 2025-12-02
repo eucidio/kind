@@ -1,264 +1,612 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Pitfall Kids</title>
+  <meta charset="UTF-8" />
+  <title>Jogo da Nave Matemática</title>
   <style>
-    canvas { 
-      background: #88c070; 
-      display: block; 
-      margin: auto; 
-      border: 2px solid #000;
-      touch-action: none; /* evita scroll ao tocar no canvas em celular */
-    }
-    h1 {
-      text-align: center;
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #111833, #030308 70%);
       font-family: Arial, sans-serif;
+      color: #fff;
+      touch-action: none; /* ajuda em tablet */
+    }
+
+    #ui {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 8px 16px;
+      border-radius: 12px;
+      backdrop-filter: blur(4px);
+      z-index: 10;
+      font-size: 18px;
+    }
+
+    #ui span.label {
+      font-weight: bold;
+      margin-right: 4px;
+    }
+
+    #buttons {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+    }
+
+    button {
+      background: #3949ab;
+      border: none;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #5c6bc0;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+
+    #overlayContent {
+      background: #111827;
+      padding: 20px;
+      border-radius: 16px;
+      max-width: 90%;
+      width: 420px;
+      text-align: center;
+    }
+
+    #overlayContent h2 {
+      margin-top: 0;
+      margin-bottom: 12px;
+    }
+
+    #rankingList {
+      text-align: left;
+      max-height: 260px;
+      overflow-y: auto;
+      margin-top: 12px;
+      font-family: "Courier New", monospace;
+      font-size: 14px;
+    }
+
+    #rankingList div {
+      padding: 2px 0;
+    }
+
+    canvas {
+      display: block;
     }
   </style>
 </head>
 <body>
+  <div id="ui">
+    <div><span class="label">Conta:</span> <span id="contaText">---</span></div>
+    <div><span class="label">Pontos:</span> <span id="scoreText">0</span></div>
+    <div><span class="label">Vidas:</span> <span id="livesText">3</span></div>
+  </div>
 
-<h1>Herr Arruda</h1>
+  <div id="buttons">
+    <button id="btnNovoJogo">Novo jogo</button>
+    <button id="btnRanking">Recordes</button>
+  </div>
 
-<canvas id="game" width="800" height="300"></canvas>
+  <div id="overlay">
+    <div id="overlayContent">
+      <h2 id="overlayTitle">Recordes</h2>
+      <div id="overlayBody"></div>
+      <div style="margin-top: 12px;">
+        <button id="btnFecharOverlay">Fechar</button>
+      </div>
+    </div>
+  </div>
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+  <canvas id="game"></canvas>
 
-// ---------- CONFIGURAÇÕES BÁSICAS ----------
-const groundY = 250;      // linha do chão
-const gravity = 0.6;
-const jumpForce = -13;    // pulo um pouco mais alto
-const obstacleSpeed = 5;
+  <script>
+    // ===========================
+    // CONFIGURAÇÕES GERAIS
+    // ===========================
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-// ---------- IMAGENS ----------
-const playerImg = new Image();
-playerImg.src = "menino.png";   // spritesheet com 4 quadros lado a lado
+    const contaText = document.getElementById("contaText");
+    const scoreText = document.getElementById("scoreText");
+    const livesText = document.getElementById("livesText");
 
-const bushImg = new Image();
-bushImg.src = "arbusto.png";    // imagem do arbusto
+    const btnNovoJogo = document.getElementById("btnNovoJogo");
+    const btnRanking = document.getElementById("btnRanking");
+    const overlay = document.getElementById("overlay");
+    const overlayTitle = document.getElementById("overlayTitle");
+    const overlayBody = document.getElementById("overlayBody");
+    const btnFecharOverlay = document.getElementById("btnFecharOverlay");
 
-// Tamanho padrão (fallback)
-let playerFrameWidth = 32;
-let playerFrameHeight = 48;
+    let width = window.innerWidth;
+    let height = window.innerHeight;
 
-// fator de escala para deixar o menino menor
-const PLAYER_SCALE = 0.6;
-
-// quando a imagem carregar, ajusta
-playerImg.onload = () => {
-  playerFrameWidth = playerImg.width / 4; // 4 quadros
-  playerFrameHeight = playerImg.height;
-};
-
-// ---------- JOGADOR ----------
-let player = {
-  x: 80,
-  y: groundY,      // y = pés no chão
-  vy: 0,
-  jumping: false,
-  frame: 0
-};
-
-// ---------- OBSTÁCULOS ----------
-let obstacles = [];
-let frameCount = 0;
-
-// ---------- VIDAS E PONTOS ----------
-let lives = 3;
-let score = 0;
-let lastTime = null; // para calcular segundos com precisão
-
-// ---------- FUNÇÃO DE PULO ----------
-function jump() {
-  if (!player.jumping) {
-    player.vy = jumpForce;
-    player.jumping = true;
-  }
-}
-
-// ---------- CONTROLES ----------
-document.addEventListener("keydown", e => {
-  if (e.code === "Space") {
-    jump();
-  }
-});
-
-canvas.addEventListener("mousedown", e => {
-  jump();
-});
-
-canvas.addEventListener("touchstart", e => {
-  e.preventDefault();
-  jump();
-}, { passive: false });
-
-// ---------- DESENHA CHÃO ----------
-function drawGround() {
-  ctx.strokeStyle = "#3b5d28";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(0, groundY);
-  ctx.lineTo(canvas.width, groundY);
-  ctx.stroke();
-}
-
-// ---------- DESENHA VIDAS (em alemão) ----------
-function drawLives() {
-  ctx.fillStyle = "black";
-  ctx.font = "20px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText("Leben: " + lives, 10, 25);
-}
-
-// ---------- DESENHA PONTOS ----------
-function drawScore() {
-  ctx.fillStyle = "black";
-  ctx.font = "20px Arial";
-  ctx.textAlign = "right";
-  ctx.fillText("Pontos: " + Math.floor(score), canvas.width - 10, 25);
-}
-
-// ---------- DESENHAR O MENINO ----------
-function drawPlayer() {
-  // tamanho desenhado (escalado)
-  const fw = playerFrameWidth * PLAYER_SCALE;
-  const fh = playerFrameHeight * PLAYER_SCALE;
-
-  const px = player.x;
-  const py = player.y - fh;  // topo da imagem (pé - altura)
-
-  if (playerImg.complete && playerImg.naturalWidth > 0) {
-    const srcFw = playerFrameWidth;
-    const srcFh = playerFrameHeight;
-
-    ctx.drawImage(
-      playerImg,
-      srcFw * player.frame,
-      0,
-      srcFw,
-      srcFh,
-      px,
-      py,
-      fw,
-      fh
-    );
-
-    // animação de corrida (quando não está no ar)
-    if (!player.jumping && frameCount % 8 === 0) {
-      player.frame = (player.frame + 1) % 4;
+    function resizeCanvas() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
     }
-  } else {
-    // provisório se a imagem ainda não carregou
-    ctx.fillStyle = "black";
-    ctx.fillRect(px, py, fw, fh);
-  }
-}
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
 
-// ---------- DESENHAR OBSTÁCULOS ----------
-function drawObstacles() {
-  for (let o of obstacles) {
-    o.x -= obstacleSpeed;
+    // ===========================
+    // ESTRUTURAS DO JOGO
+    // ===========================
+    const gameState = {
+      running: false,
+      score: 0,
+      lives: 3,
+      currentAnswer: 0,
+      meteors: [],
+      lastSpawn: 0,
+      spawnInterval: 2000, // ms
+      questionText: "",
+    };
 
-    const bushWidth = 40;
-    const bushHeight = 40;
-    const bx = o.x;
-    const by = groundY - bushHeight;
+    const ship = {
+      x: width / 2,
+      y: height * 0.85,
+      width: 60,
+      height: 40,
+      targetX: width / 2,
+      targetY: height * 0.85,
+    };
 
-    if (bushImg.complete && bushImg.naturalWidth > 0) {
-      ctx.drawImage(bushImg, bx, by, bushWidth, bushHeight);
-    } else {
-      ctx.fillStyle = "green";
-      ctx.fillRect(bx, by, bushWidth, bushHeight);
-    }
+    // ===========================
+    // GERADOR DE CONTAS
+    // ===========================
+    const TipoOperacao = {
+      SOMA: 0,
+      SUB: 1,
+      MULT: 2,
+      DIV: 3,
+    };
 
-    // colisão simples retângulo vs retângulo
-    const fw = playerFrameWidth * PLAYER_SCALE;
-    const fh = playerFrameHeight * PLAYER_SCALE;
-    const px = player.x;
-    const py = player.y - fh;
+    function gerarConta() {
+      const tipo = Math.floor(Math.random() * 4);
+      let a, b, resultado, texto;
 
-    if (
-      px < bx + bushWidth &&
-      px + fw > bx &&
-      py < by + bushHeight &&
-      py + fh > by
-    ) {
-      // COLIDIU
-      lives--;
-
-      if (lives > 0) {
-        // reseta obstáculos e posição do jogador, mas mantém a pontuação
-        obstacles = [];
-        player.x = 80;
-        player.y = groundY;
-        player.vy = 0;
-        player.jumping = false;
-        frameCount = 0;
-      } else {
-        alert("Game Over! Deine Chancen sind vorbei..");
-        // reinicia tudo
-        lives = 3;
-        score = 0;
-        lastTime = null;
-        obstacles = [];
-        player.x = 80;
-        player.y = groundY;
-        player.vy = 0;
-        player.jumping = false;
-        frameCount = 0;
+      switch (tipo) {
+        case TipoOperacao.SOMA:
+          a = randInt(0, 20);
+          b = randInt(0, 20);
+          resultado = a + b;
+          texto = `${a} + ${b}`;
+          break;
+        case TipoOperacao.SUB:
+          a = randInt(0, 20);
+          b = randInt(0, a);
+          resultado = a - b;
+          texto = `${a} - ${b}`;
+          break;
+        case TipoOperacao.MULT:
+          a = randInt(0, 10);
+          b = randInt(0, 10);
+          resultado = a * b;
+          texto = `${a} × ${b}`;
+          break;
+        case TipoOperacao.DIV:
+          b = randInt(1, 10);
+          resultado = randInt(1, 10);
+          a = b * resultado;
+          texto = `${a} ÷ ${b}`;
+          break;
+        default:
+          a = 0; b = 0; resultado = 0;
+          texto = "0 + 0";
       }
 
-      // sai do loop para evitar múltiplas colisões no mesmo frame
-      break;
+      return { texto, resultado };
     }
-  }
 
-  // remove obstáculos fora da tela
-  obstacles = obstacles.filter(o => o.x > -60);
-}
+    function randInt(min, maxInclusive) {
+      return Math.floor(Math.random() * (maxInclusive - min + 1)) + min;
+    }
 
-// ---------- LOOP PRINCIPAL ----------
-function loop(timestamp) {
-  if (!lastTime) lastTime = timestamp;
-  const deltaSeconds = (timestamp - lastTime) / 1000;
-  lastTime = timestamp;
+    // ===========================
+    // METEORITOS
+    // ===========================
+    function criarMeteorosParaConta(respostaCorreta) {
+      gameState.meteors = [];
 
-  // a cada segundo correndo = +10 pontos
-  score += deltaSeconds * 10;
+      const total = 6; // 1 certo + 5 errados
+      const valores = [respostaCorreta];
 
-  frameCount++;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+      while (valores.length < total) {
+        let v = respostaCorreta + randInt(-10, 10);
+        if (v < -50) v = -50;
+        if (v > 200) v = 200;
+        if (!valores.includes(v)) valores.push(v);
+      }
 
-  drawGround();
-  drawLives();
-  drawScore();
+      // embaralha
+      for (let i = valores.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [valores[i], valores[j]] = [valores[j], valores[i]];
+      }
 
-  // física do jogador
-  player.vy += gravity;
-  player.y += player.vy;
+      for (let i = 0; i < valores.length; i++) {
+        const x = randInt(50, width - 50);
+        const y = randInt(-height * 0.3, -50);
+        const speed = 1.2 + Math.random() * 1.5;
+        const r = 35 + Math.random() * 15;
 
-  if (player.y >= groundY) {
-    player.y = groundY;
-    player.vy = 0;
-    player.jumping = false;
-  }
+        gameState.meteors.push({
+          x,
+          y,
+          r,
+          value: valores[i],
+          speed,
+        });
+      }
+    }
 
-  drawPlayer();
+    // ===========================
+    // CONTROLE DA NAVE (TOQUE / MOUSE)
+    // ===========================
+    function atualizarAlvoNave(clientX, clientY) {
+      ship.targetX = clientX;
+      ship.targetY = clientY;
 
-  // cria novos obstáculos
-  if (frameCount % 120 === 0) {
-    obstacles.push({ x: canvas.width + 20 });
-  }
+      // Mantém dentro da tela
+      const halfW = ship.width / 2;
+      const halfH = ship.height / 2;
+      if (ship.targetX < halfW) ship.targetX = halfW;
+      if (ship.targetX > width - halfW) ship.targetX = width - halfW;
+      if (ship.targetY < halfH) ship.targetY = halfH;
+      if (ship.targetY > height - halfH) ship.targetY = height - halfH;
+    }
 
-  drawObstacles();
+    canvas.addEventListener("pointerdown", (e) => {
+      atualizarAlvoNave(e.clientX, e.clientY);
+    });
 
-  requestAnimationFrame(loop);
-}
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.pressure > 0 || e.buttons !== 0) {
+        atualizarAlvoNave(e.clientX, e.clientY);
+      }
+    });
 
-requestAnimationFrame(loop);
-</script>
+    // ===========================
+    // LOOP DO JOGO
+    // ===========================
+    let lastTime = 0;
+
+    function gameLoop(timestamp) {
+      if (!gameState.running) {
+        // mesmo parado, redesenha a nave e fundo para não “sumir”
+        drawScene();
+        requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      const delta = timestamp - lastTime;
+      lastTime = timestamp;
+
+      update(delta);
+      drawScene();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function update(delta) {
+      // mover nave suavemente em direção ao alvo
+      const lerp = 0.15;
+      ship.x += (ship.targetX - ship.x) * lerp;
+      ship.y += (ship.targetY - ship.y) * lerp;
+
+      // atualizar meteoros
+      for (let i = gameState.meteors.length - 1; i >= 0; i--) {
+        const m = gameState.meteors[i];
+        m.y += m.speed * (delta / 16.67); // normalizado
+
+        // saiu da tela
+        if (m.y - m.r > height) {
+          // se este era o correto, perde vida
+          if (m.value === gameState.currentAnswer) {
+            perderVida();
+          }
+          gameState.meteors.splice(i, 1);
+          continue;
+        }
+
+        // colisão com nave
+        if (colideNaveMeteoro(ship, m)) {
+          if (m.value === gameState.currentAnswer) {
+            // acerto!
+            gameState.score += 100;
+            scoreText.textContent = gameState.score;
+            // nova rodada
+            novaRodada();
+          } else {
+            // erro
+            perderVida();
+            gameState.meteors.splice(i, 1);
+          }
+        }
+      }
+    }
+
+    function perderVida() {
+      gameState.lives -= 1;
+      if (gameState.lives < 0) gameState.lives = 0;
+      livesText.textContent = gameState.lives;
+
+      if (gameState.lives <= 0) {
+        fimDeJogo();
+      }
+    }
+
+    function novaRodada() {
+      const conta = gerarConta();
+      gameState.questionText = conta.texto;
+      gameState.currentAnswer = conta.resultado;
+      contaText.textContent = conta.texto;
+      criarMeteorosParaConta(gameState.currentAnswer);
+    }
+
+    function fimDeJogo() {
+      gameState.running = false;
+      mostraPerguntaRecorde();
+    }
+
+    function colideNaveMeteoro(ship, m) {
+      // caixa aproximada pra nave (retângulo) x círculo
+      const closestX = clamp(m.x, ship.x - ship.width / 2, ship.x + ship.width / 2);
+      const closestY = clamp(m.y, ship.y - ship.height / 2, ship.y + ship.height / 2);
+      const dx = m.x - closestX;
+      const dy = m.y - closestY;
+      const dist2 = dx * dx + dy * dy;
+      return dist2 < m.r * m.r;
+    }
+
+    function clamp(v, min, max) {
+      return v < min ? min : v > max ? max : v;
+    }
+
+    // ===========================
+    // DESENHO
+    // ===========================
+    function drawScene() {
+      // fundo espaço
+      ctx.clearRect(0, 0, width, height);
+      drawBackgroundStars();
+
+      // nave
+      drawShip();
+
+      // meteoros
+      for (const m of gameState.meteors) {
+        drawMeteor(m);
+      }
+
+      // se não estiver rodando e não for logo após fim de jogo, pode mostrar texto
+      if (!gameState.running) {
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(width / 2 - 200, height / 2 - 60, 400, 120);
+        ctx.fillStyle = "#fff";
+        ctx.font = "24px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Toque ou clique em 'Novo jogo' para jogar", width / 2, height / 2);
+        ctx.restore();
+      }
+    }
+
+    function drawBackgroundStars() {
+      ctx.save();
+      ctx.fillStyle = "#ffffff22";
+      for (let i = 0; i < 80; i++) {
+        const x = (i * 97) % width;
+        const y = (i * 53) % height;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawShip() {
+      ctx.save();
+      ctx.translate(ship.x, ship.y);
+
+      // corpo
+      ctx.fillStyle = "#90caf9";
+      ctx.beginPath();
+      ctx.moveTo(0, -ship.height / 2);
+      ctx.lineTo(ship.width / 2, ship.height / 2);
+      ctx.lineTo(-ship.width / 2, ship.height / 2);
+      ctx.closePath();
+      ctx.fill();
+
+      // cabine
+      ctx.fillStyle = "#e3f2fd";
+      ctx.beginPath();
+      ctx.arc(0, 0, 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      // chama
+      ctx.fillStyle = "#ffb74d";
+      ctx.beginPath();
+      ctx.moveTo(-ship.width / 4, ship.height / 2);
+      ctx.lineTo(0, ship.height / 2 + 18);
+      ctx.lineTo(ship.width / 4, ship.height / 2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawMeteor(m) {
+      ctx.save();
+      ctx.translate(m.x, m.y);
+
+      // meteoro
+      const gradient = ctx.createRadialGradient(0, 0, m.r * 0.3, 0, 0, m.r);
+      gradient.addColorStop(0, "#ffcc80");
+      gradient.addColorStop(1, "#bf360c");
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, m.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // rachaduras simples
+      ctx.strokeStyle = "#4e342e";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-m.r * 0.5, -m.r * 0.2);
+      ctx.lineTo(-m.r * 0.1, 0);
+      ctx.lineTo(-m.r * 0.4, m.r * 0.3);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(m.r * 0.4, -m.r * 0.3);
+      ctx.lineTo(m.r * 0.2, 0);
+      ctx.lineTo(m.r * 0.5, m.r * 0.2);
+      ctx.stroke();
+
+      // número
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold " + Math.floor(m.r * 0.9) + "px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(m.value.toString(), 0, 0);
+
+      ctx.restore();
+    }
+
+    // ===========================
+    // SISTEMA DE RECORDES (LOCALSTORAGE)
+    // ===========================
+    const MAX_RECORDES = 20;
+    const STORAGE_KEY = "nave_matematica_recordes";
+
+    function carregarRecordes() {
+      const txt = localStorage.getItem(STORAGE_KEY);
+      if (!txt) return [];
+      try {
+        const arr = JSON.parse(txt);
+        if (!Array.isArray(arr)) return [];
+        return arr;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function salvarRecordes(lista) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
+    }
+
+    function registrarNovoRecorde(nome, pontos) {
+      let lista = carregarRecordes();
+      lista.push({ nome, pontos });
+      lista.sort((a, b) => b.pontos - a.pontos);
+      if (lista.length > MAX_RECORDES) {
+        lista = lista.slice(0, MAX_RECORDES);
+      }
+      salvarRecordes(lista);
+    }
+
+    function mostraRanking() {
+      const lista = carregarRecordes();
+      overlayTitle.textContent = "Recordes (Top 20)";
+      const div = document.createElement("div");
+      div.id = "rankingList";
+
+      if (lista.length === 0) {
+        div.textContent = "Ainda não há recordes.";
+      } else {
+        lista.forEach((r, i) => {
+          const linha = document.createElement("div");
+          const pos = (i + 1).toString().padStart(2, " ");
+          const nome = (r.nome || "---").toString().padEnd(3, " ");
+          const pontos = r.pontos.toString().padStart(5, " ");
+          linha.textContent = `${pos}. ${nome} - ${pontos} pts`;
+          div.appendChild(linha);
+        });
+      }
+
+      overlayBody.innerHTML = "";
+      overlayBody.appendChild(div);
+      overlay.style.display = "flex";
+    }
+
+    function mostraPerguntaRecorde() {
+      // Pergunta iniciais com prompt simples
+      setTimeout(() => {
+        const pontos = gameState.score;
+        let iniciais = prompt(
+          `Fim de jogo!\nVocê fez ${pontos} pontos.\nDigite suas iniciais (3 letras):`,
+          "AAA"
+        );
+        if (iniciais) {
+          iniciais = iniciais.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
+          if (iniciais.length === 0) {
+            iniciais = "---";
+          }
+          registrarNovoRecorde(iniciais, pontos);
+        }
+        mostraRanking();
+      }, 200);
+    }
+
+    // ===========================
+    // CONTROLE DE BOTÕES
+    // ===========================
+    btnNovoJogo.addEventListener("click", () => {
+      iniciarNovoJogo();
+    });
+
+    btnRanking.addEventListener("click", () => {
+      mostraRanking();
+    });
+
+    btnFecharOverlay.addEventListener("click", () => {
+      overlay.style.display = "none";
+    });
+
+    function iniciarNovoJogo() {
+      gameState.score = 0;
+      gameState.lives = 3;
+      gameState.meteors = [];
+      gameState.running = true;
+      scoreText.textContent = gameState.score;
+      livesText.textContent = gameState.lives;
+      ship.x = width / 2;
+      ship.y = height * 0.85;
+      ship.targetX = ship.x;
+      ship.targetY = ship.y;
+      novaRodada();
+    }
+
+    // ===========================
+    // INÍCIO
+    // ===========================
+    requestAnimationFrame(gameLoop);
+  </script>
 </body>
 </html>
